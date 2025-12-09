@@ -37,13 +37,22 @@
         .tab.active { background: white; border-bottom: 2px solid #007bff; font-weight: bold; }
         .tab-content { display: none; }
         .tab-content.active { display: block; }
+        
+        /* エラー表示用 */
+        #error-msg { color: red; font-size: 0.9rem; margin: 10px 0; display: none; background: #ffe6e6; padding: 10px; border-radius: 5px;}
+        .debug-area { margin: 10px 0; font-size: 0.9rem; color: #666; }
     </style>
 </head>
 <body>
 
     <div class="card">
         <h1>Controller</h1>
+        <div id="error-msg"></div>
         <button id="btn-connect" onclick="connectBLE()">Bluetooth接続</button>
+        
+        <div class="debug-area">
+            <label><input type="checkbox" id="chk-debug"> すべてのデバイスを表示(検索できない場合)</label>
+        </div>
         
         <div class="status">
             <div id="status-text" class="disconnect">未接続</div>
@@ -108,12 +117,178 @@
         let bluetoothDevice;
         let rxCharacteristic;
         let configData = {}; 
+        
+        // 起動時にBluetooth APIが使えるかチェック
+        window.onload = function() {
+            if (!navigator.bluetooth) {
+                const msg = document.getElementById("error-msg");
+                msg.style.display = "block";
+                msg.innerHTML = "⚠️ ブラウザがBluetoothに対応していないか、セキュリティ制限により無効化されています。<br>URLが <b>https://</b> または <b>localhost</b> であることを確認してください。(file:// は不可)";
+                document.getElementById("btn-connect").disabled = true;
+            }
+        };
 
         async function connectBLE() {
             try {
+                // エラー表示をクリア
+                document.getElementById("error-msg").style.display = "none";
+                
                 console.log('Requesting Bluetooth Device...');
-                // ★修正: "AutoCtrl" から始まるデバイスを検索
-                bluetoothDevice = await navigator.bluetooth.requestDevice({
-                    filters: [{ namePrefix: 'AutoCtrl' }],
-                    optionalServices: [SERVICE_UUID]
-                });
+                
+                let options = {};
+                // デバッグモード(全表示)か、フィルタモードか
+                if (document.getElementById("chk-debug").checked) {
+                     // 全デバイスを表示 (名前フィルタなし)
+                     // ※acceptAllDevicesを使う場合はoptionalServicesが必須
+                     options = {
+                         acceptAllDevices: true,
+                         optionalServices: [SERVICE_UUID]
+                     };
+                } else {
+                    // 通常モード: "AutoCtrl" から始まるデバイスを検索
+                    options = {
+                        filters: [{ namePrefix: 'AutoCtrl' }],
+                        optionalServices: [SERVICE_UUID]
+                    };
+                }
+
+                bluetoothDevice = await navigator.bluetooth.requestDevice(options);
+
+                bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
+
+                console.log('Connecting to GATT Server...');
+                const server = await bluetoothDevice.gatt.connect();
+
+                console.log('Getting Service...');
+                const service = await server.getPrimaryService(SERVICE_UUID);
+
+                console.log('Getting Characteristics...');
+                rxCharacteristic = await service.getCharacteristic(CHAR_RX_UUID);
+                const txCharacteristic = await service.getCharacteristic(CHAR_TX_UUID);
+
+                await txCharacteristic.startNotifications();
+                txCharacteristic.addEventListener('characteristicvaluechanged', handleNotifications);
+
+                console.log('Connected!');
+                document.getElementById("btn-connect").innerText = "接続済み";
+                document.getElementById("btn-connect").disabled = true;
+                document.getElementById("control-panel").style.display = "block";
+                document.getElementById("setting-panel").style.display = "block";
+                
+                sendCommand("GET_STATUS");
+
+            } catch (error) {
+                console.log('Argh! ' + error);
+                const msg = document.getElementById("error-msg");
+                msg.style.display = "block";
+                msg.innerText = "接続エラー: " + error;
+            }
+        }
+
+        function onDisconnected(event) {
+            console.log('Disconnected');
+            document.getElementById("btn-connect").innerText = "再接続";
+            document.getElementById("btn-connect").disabled = false;
+            document.getElementById("status-text").innerText = "未接続";
+            document.getElementById("status-text").className = "disconnect";
+            document.getElementById("volt").innerText = "--";
+        }
+
+        function handleNotifications(event) {
+            const value = event.target.value;
+            const decoder = new TextDecoder('utf-8');
+            const jsonStr = decoder.decode(value);
+            console.log('Notification:', jsonStr);
+            
+            try {
+                const data = JSON.parse(jsonStr);
+                updateUI(data);
+            } catch (e) {
+                console.error("JSON Parse Error", e);
+            }
+        }
+
+        function updateUI(d) {
+            document.getElementById('volt').innerText = d.v.toFixed(2);
+            
+            let stText = ''; let stClass = '';
+            if (d.a === 0) { 
+               if(d.ms === 1) { stText = '[手動:停止]'; stClass = 'stop'; }
+               else { stText = '[手動操作中]'; stClass = 'manual'; }
+            }
+            else if (d.t === 1) { stText = '[信号待ち...停止]'; stClass = 'stop'; }
+            else if (d.h === 1) { stText = '[保留満タン停止]'; stClass = 'stop'; } 
+            else if (d.s === 3) { stText = '★ 右打ち中 ★'; stClass = 'right'; }
+            else { stText = '通常稼働中'; stClass = 'normal'; }
+            
+            let el = document.getElementById('status-text');
+            el.innerText = stText; el.className = stClass;
+
+            const autoBtnDiv = document.getElementById("auto-indicator");
+            if (d.a === 1) {
+                autoBtnDiv.innerHTML = "<div style='color:green; font-size:0.9rem; padding:10px;'>● 自動制御で動作中</div>";
+            } else {
+                if (!autoBtnDiv.innerHTML.includes("button")) {
+                    autoBtnDiv.innerHTML = '<button class="btn-auto" onclick="setAutoMode()">自動制御を再開 (START)</button>';
+                }
+            }
+
+            if (d.cfg) {
+                configData = d.cfg;
+                if(document.activeElement.tagName !== "INPUT") { 
+                    document.getElementById("cfg-w").value = d.cfg.W;
+                    document.getElementById("cfg-n").value = d.cfg.N;
+                    document.getElementById("cfg-m1").value = d.cfg.M1;
+                    document.getElementById("cfg-m2").value = d.cfg.M2;
+                    document.getElementById("cfg-m3").value = d.cfg.M3;
+                    document.getElementById("cfg-m4").value = d.cfg.M4;
+                }
+                document.getElementById("disp-weak").innerText = "(" + d.cfg.W.toFixed(2) + " V)";
+                document.getElementById("disp-m1").innerText = d.cfg.M1.toFixed(2) + " V";
+                document.getElementById("disp-m2").innerText = d.cfg.M2.toFixed(2) + " V";
+                document.getElementById("disp-m3").innerText = d.cfg.M3.toFixed(2) + " V";
+                document.getElementById("disp-m4").innerText = d.cfg.M4.toFixed(2) + " V";
+            }
+        }
+
+        async function sendCommand(cmd) {
+            if (!bluetoothDevice || !bluetoothDevice.gatt.connected) return;
+            const encoder = new TextEncoder('utf-8');
+            await rxCharacteristic.writeValue(encoder.encode(cmd));
+        }
+
+        function setAutoMode() {
+            sendCommand("CMD_AUTO");
+        }
+
+        function setManual(val) {
+            sendCommand("CMD_MANUAL:" + val);
+        }
+        
+        function setManualVal(key) {
+            if (configData && configData[key] !== undefined) {
+                setManual(configData[key]);
+            }
+        }
+
+        function saveSettings() {
+            let cmd = "SAVE:";
+            cmd += "W=" + document.getElementById("cfg-w").value + ",";
+            cmd += "N=" + document.getElementById("cfg-n").value + ",";
+            cmd += "M1=" + document.getElementById("cfg-m1").value + ",";
+            cmd += "M2=" + document.getElementById("cfg-m2").value + ",";
+            cmd += "M3=" + document.getElementById("cfg-m3").value + ",";
+            cmd += "M4=" + document.getElementById("cfg-m4").value;
+            sendCommand(cmd);
+        }
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            
+            event.target.classList.add('active');
+            document.getElementById(tabId).classList.add('active');
+        }
+    </script>
+</body>
+</html>
