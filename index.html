@@ -3,15 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Controller Web App</title>
+    <title>Controller Web App v2.2</title>
     <style>
         body { font-family: sans-serif; text-align: center; padding: 10px; background-color: #f0f0f0; touch-action: manipulation; }
         .card { background: white; padding: 15px; margin: 10px auto; max-width: 400px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         h1 { font-size: 1.2rem; color: #333; margin: 5px 0; }
         .status { font-weight: bold; font-size: 1.1rem; margin: 10px 0; min-height: 1.5em;}
-        .stop { color: red; } .normal { color: green; } .right { color: orange; } .manual { color: blue; }
+        
+        /* ステータス色定義 */
+        .stop { color: red; } 
+        .normal { color: green; } 
+        .right { color: #ff6600; font-weight: 900; animation: blink 1s infinite; } /* 右打ち(昇圧)は点滅強調 */
+        .manual { color: blue; }
         .disconnect { color: #999; }
         
+        @keyframes blink { 50% { opacity: 0.7; } }
+
         button { cursor: pointer; border: none; border-radius: 5px; font-family: inherit; }
         
         #btn-connect { background-color: #333; color: white; padding: 10px 30px; font-size: 1rem; margin-bottom: 10px; }
@@ -19,8 +26,12 @@
 
         .btn-auto { background-color: #28a745; color: white; width: 100%; padding: 15px; font-size: 1.2rem; margin-top: 10px; font-weight:bold; }
         
+        /* 右打ちボタン用スタイル */
+        .btn-right-mode { background-color: #ff6600; color: white; width: 100%; padding: 15px; font-size: 1.2rem; margin-top: 10px; font-weight:bold; border: 2px solid #cc5200; }
+        .btn-right-mode:active { transform: translateY(2px); background-color: #cc5200; }
+
         .manual-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; }
-        .btn-step { padding: 10px; font-size: 1.0rem; background-color: #e9ecef; color: #333; border: 1px solid #ced4da; height: 80px; }
+        .btn-step { padding: 5px; font-size: 0.95rem; background-color: #e9ecef; color: #333; border: 1px solid #ced4da; height: 80px; }
         .btn-step:active { background-color: #dee2e6; transform: translateY(2px); }
         .btn-step.active { background-color: #b8daff; border-color: #007bff; }
         .btn-step.stop-btn { color: red; font-weight: bold; }
@@ -41,12 +52,14 @@
         /* エラー表示用 */
         #error-msg { color: red; font-size: 0.9rem; margin: 10px 0; display: none; background: #ffe6e6; padding: 10px; border-radius: 5px;}
         .debug-area { margin: 10px 0; font-size: 0.9rem; color: #666; }
+
+        .boost-voltage { color: #d63384; font-weight: bold; font-size: 1.2em; } /* 昇圧時の電圧表示スタイル */
     </style>
 </head>
 <body>
 
     <div class="card">
-        <h1>Controller</h1>
+        <h1>Controller v2.2</h1>
         <div id="error-msg"></div>
         <button id="btn-connect" onclick="connectBLE()">Bluetooth接続</button>
         
@@ -64,6 +77,9 @@
             <div id="auto-indicator">
                 <button class="btn-auto" onclick="setAutoMode()">自動制御を再開</button>
             </div>
+
+            <!-- 右打ちボタン (昇圧制御用) -->
+            <button class="btn-right-mode" onclick="setManual(3.8)">★ 右打ち (昇圧 3.8V) ★</button>
             
             <div class="manual-grid">
                 <button class="btn-step stop-btn" onclick="setManual(-1)">Lv.0<br>停止<span id="disp-weak">-- V</span></button>
@@ -71,9 +87,10 @@
                 <button class="btn-step" onclick="setManualVal('M2')">Lv.2<br>中弱<span id="disp-m2">-- V</span></button>
                 <button class="btn-step" onclick="setManualVal('M3')">Lv.3<br>中<span id="disp-m3">-- V</span></button>
                 <button class="btn-step" onclick="setManualVal('M4')">Lv.4<br>中強<span id="disp-m4">-- V</span></button>
-                <button class="btn-step" style="color:orange; font-weight:bold" onclick="setManual(3.3)">Lv.5<br>MAX<span>3.30 V</span></button>
+                <!-- Lv.5は PWM Max (3.3V - 0.2V = 3.1V) に変更 -->
+                <button class="btn-step" style="color:blue; font-weight:bold" onclick="setManual(3.1)">Lv.5<br>PWM Max<span>3.10 V</span></button>
             </div>
-            <p><small>※ボタンを押すと自動制御が停止します</small></p>
+            <p><small>※ボタンを押すと自動制御が停止します<br>(Lv.5は補正込みPWM限界 3.1V)</small></p>
         </div>
     </div>
 
@@ -95,6 +112,7 @@
                     <input type="number" id="cfg-n" step="0.1" inputmode="decimal">
                 </div>
             </div>
+            <p><small>※右打ち時は固定 3.8V (設定不要)</small></p>
         </div>
 
         <div id="tab2" class="tab-content">
@@ -104,6 +122,7 @@
                 <div class="setting-item"><span class="setting-label">Lv.3:</span><input type="number" id="cfg-m3" step="0.1"></div>
                 <div class="setting-item"><span class="setting-label">Lv.4:</span><input type="number" id="cfg-m4" step="0.1"></div>
             </div>
+            <p><small>※Lv.5は 3.1V 固定です (3.3-0.2)</small></p>
         </div>
 
         <button class="btn-save" onclick="saveSettings()">設定を保存</button>
@@ -118,7 +137,6 @@
         let rxCharacteristic;
         let configData = {}; 
         
-        // 起動時にBluetooth APIが使えるかチェック
         window.onload = function() {
             if (!navigator.bluetooth) {
                 const msg = document.getElementById("error-msg");
@@ -130,22 +148,16 @@
 
         async function connectBLE() {
             try {
-                // エラー表示をクリア
                 document.getElementById("error-msg").style.display = "none";
-                
                 console.log('Requesting Bluetooth Device...');
                 
                 let options = {};
-                // デバッグモード(全表示)か、フィルタモードか
                 if (document.getElementById("chk-debug").checked) {
-                     // 全デバイスを表示 (名前フィルタなし)
-                     // ※acceptAllDevicesを使う場合はoptionalServicesが必須
                      options = {
                          acceptAllDevices: true,
                          optionalServices: [SERVICE_UUID]
                      };
                 } else {
-                    // 通常モード: "AutoCtrl" から始まるデバイスを検索
                     options = {
                         filters: [{ namePrefix: 'AutoCtrl' }],
                         optionalServices: [SERVICE_UUID]
@@ -153,7 +165,6 @@
                 }
 
                 bluetoothDevice = await navigator.bluetooth.requestDevice(options);
-
                 bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
 
                 console.log('Connecting to GATT Server...');
@@ -192,13 +203,14 @@
             document.getElementById("status-text").innerText = "未接続";
             document.getElementById("status-text").className = "disconnect";
             document.getElementById("volt").innerText = "--";
+            document.getElementById("volt").className = "";
         }
 
         function handleNotifications(event) {
             const value = event.target.value;
             const decoder = new TextDecoder('utf-8');
             const jsonStr = decoder.decode(value);
-            console.log('Notification:', jsonStr);
+            // console.log('Notification:', jsonStr);
             
             try {
                 const data = JSON.parse(jsonStr);
@@ -209,16 +221,32 @@
         }
 
         function updateUI(d) {
-            document.getElementById('volt').innerText = d.v.toFixed(2);
+            const voltEl = document.getElementById('volt');
+            voltEl.innerText = d.v.toFixed(2);
+            
+            // 昇圧動作時(3.3V超え)は電圧表示を強調
+            if (d.v > 3.4) {
+                voltEl.className = 'boost-voltage';
+            } else {
+                voltEl.className = '';
+            }
             
             let stText = ''; let stClass = '';
+            
             if (d.a === 0) { 
+               // 手動モード
                if(d.ms === 1) { stText = '[手動:停止]'; stClass = 'stop'; }
+               // ★ESP側で昇圧モード(STATE_RIGHT=3)になれば、手動でもここが反映される
+               else if(d.s === 3) { stText = '★ 手動:右打ち (3.8V) ★'; stClass = 'right'; }
                else { stText = '[手動操作中]'; stClass = 'manual'; }
             }
             else if (d.t === 1) { stText = '[信号待ち...停止]'; stClass = 'stop'; }
             else if (d.h === 1) { stText = '[保留満タン停止]'; stClass = 'stop'; } 
-            else if (d.s === 3) { stText = '★ 右打ち中 ★'; stClass = 'right'; }
+            else if (d.s === 3) { 
+                // STATE_RIGHT (大当たり中)
+                stText = '★ 右打ち中 (昇圧 3.8V) ★'; 
+                stClass = 'right'; 
+            }
             else { stText = '通常稼働中'; stClass = 'normal'; }
             
             let el = document.getElementById('status-text');
@@ -235,6 +263,7 @@
 
             if (d.cfg) {
                 configData = d.cfg;
+                // 入力中じゃなければ設定値を反映
                 if(document.activeElement.tagName !== "INPUT") { 
                     document.getElementById("cfg-w").value = d.cfg.W;
                     document.getElementById("cfg-n").value = d.cfg.N;
@@ -243,6 +272,7 @@
                     document.getElementById("cfg-m3").value = d.cfg.M3;
                     document.getElementById("cfg-m4").value = d.cfg.M4;
                 }
+                // ボタン上の電圧表示更新
                 document.getElementById("disp-weak").innerText = "(" + d.cfg.W.toFixed(2) + " V)";
                 document.getElementById("disp-m1").innerText = d.cfg.M1.toFixed(2) + " V";
                 document.getElementById("disp-m2").innerText = d.cfg.M2.toFixed(2) + " V";
