@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Controller Web App v4.3</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 10px; background-color: #f0f0f0; touch-action: manipulation; }
+        .card { background: white; padding: 15px; margin: 10px auto; max-width: 400px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        h1 { font-size: 1.2rem; color: #333; margin: 5px 0; }
+        .status { font-weight: bold; font-size: 1.1rem; margin: 10px 0; min-height: 1.5em;}
+        
+        /* ステータス色定義 */
+        .stop { color: #666; } 
+        .normal { color: green; } 
+        /* Ver4.3: 右打ち(最強)は3V付近なので、状態ID=3または電圧低で判定 */
+        .right { color: #ff0000; font-weight: 900; animation: blink 1s infinite; } 
+        .manual { color: blue; }
+        .disconnect { color: #999; }
+        
+        @keyframes blink { 50% { opacity: 0.7; } }
+
+        button { cursor: pointer; border: none; border-radius: 5px; font-family: inherit; }
+        
+        #btn-connect { background-color: #333; color: white; padding: 10px 30px; font-size: 1rem; margin-bottom: 10px; }
+        #btn-connect:disabled { background-color: #999; }
+
+        .btn-auto { background-color: #28a745; color: white; width: 100%; padding: 15px; font-size: 1.2rem; margin-top: 10px; font-weight:bold; }
+        
+        /* 右打ちボタン用スタイル */
+        .btn-right-mode { background-color: #ff0000; color: white; width: 100%; padding: 15px; font-size: 1.2rem; margin-top: 10px; font-weight:bold; border: 2px solid #cc0000; }
+        .btn-right-mode:active { transform: translateY(2px); background-color: #cc0000; }
+
+        .manual-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; }
+        .btn-step { padding: 5px; font-size: 0.95rem; background-color: #e9ecef; color: #333; border: 1px solid #ced4da; height: 80px; }
+        .btn-step:active { background-color: #dee2e6; transform: translateY(2px); }
+        .btn-step.active { background-color: #b8daff; border-color: #007bff; }
+        .btn-step.stop-btn { color: #666; font-weight: bold; }
+        .btn-step span { font-size: 0.8rem; color: #666; display: block; margin-top: 4px; }
+        
+        .val-label { font-size: 0.75rem; color: #555; display: block;}
+
+        .setting-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; text-align: left; }
+        .setting-item { margin-bottom: 8px; }
+        .setting-label { font-size: 0.9rem; font-weight: bold; display: block; margin-bottom: 2px; }
+        input[type='number'] { width: 100%; box-sizing: border-box; padding: 8px; font-size: 1.1rem; text-align: center; border: 1px solid #ccc; border-radius: 4px; }
+        .btn-save { background-color: #007bff; color: white; padding: 12px 20px; font-size: 1rem; width: 100%; margin-top: 15px; }
+        
+        .tabs { display: flex; border-bottom: 1px solid #ccc; margin-bottom: 15px; }
+        .tab { flex: 1; padding: 10px; background: #eee; cursor: pointer; }
+        .tab.active { background: white; border-bottom: 2px solid #007bff; font-weight: bold; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
+        /* エラー表示用 */
+        #error-msg { color: red; font-size: 0.9rem; margin: 10px 0; display: none; background: #ffe6e6; padding: 10px; border-radius: 5px;}
+        .debug-area { margin: 10px 0; font-size: 0.9rem; color: #666; }
+
+        /* Ver4.3: 電圧表示スタイル (3Vに近いほど強いので色を変える) */
+        .volt-value { font-size: 1.5rem; font-weight: bold; }
+        .volt-high { color: #666; } /* 停止(10V)付近 */
+        .volt-mid { color: green; } /* 通常(5-6V)付近 */
+        .volt-low { color: #ff0000; text-shadow: 0 0 5px rgba(255,0,0,0.3); } /* 右打ち(3V)付近 */
+
+        .info-box { background: #eef; padding: 8px; font-size: 0.85rem; border-radius: 5px; margin-bottom: 10px; text-align: left; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h1>Controller v4.3 (0-10V)</h1>
+        <div id="error-msg"></div>
+        <button id="btn-connect" onclick="connectBLE()">Bluetooth接続</button>
+        
+        <div class="debug-area">
+            <label><input type="checkbox" id="chk-debug"> すべてのデバイスを表示(検索できない場合)</label>
+        </div>
+        
+        <div class="status">
+            <div id="status-text" class="disconnect">未接続</div>
+            <div style="font-size:0.9rem; margin-top:5px;">
+                出力: <span id="volt" class="volt-value">--</span> V
+                <br><span style="font-size:0.8rem; color:#666;">(強度: <span id="str-val">--</span> / 3.0)</span>
+            </div>
+        </div>
+
+        <!-- 操作パネル -->
+        <div id="control-panel" style="display:none;">
+            <div id="auto-indicator">
+                <button class="btn-auto" onclick="setAutoMode()">自動制御を再開</button>
+            </div>
+
+            <!-- 右打ちボタン (最強強度3.0送信) -->
+            <button class="btn-right-mode" onclick="setManual(3.0)">★ 右打ち (Max 3.0) ★</button>
+            
+            <div class="manual-grid">
+                <!-- 停止は強度-1を送る -->
+                <button class="btn-step stop-btn" onclick="setManual(-1)">Lv.0<br>停止<span class="val-label">10.0V</span></button>
+                
+                <button class="btn-step" onclick="setManualVal('M1')">Lv.1<br>弱<span id="disp-m1" class="val-label">--</span></button>
+                <button class="btn-step" onclick="setManualVal('M2')">Lv.2<br>中弱<span id="disp-m2" class="val-label">--</span></button>
+                <button class="btn-step" onclick="setManualVal('M3')">Lv.3<br>中<span id="disp-m3" class="val-label">--</span></button>
+                <button class="btn-step" onclick="setManualVal('M4')">Lv.4<br>中強<span id="disp-m4" class="val-label">--</span></button>
+                
+                <!-- Lv.5は最強強度3.0固定 -->
+                <button class="btn-step" style="color:red; font-weight:bold" onclick="setManual(3.0)">Lv.5<br>最強<span class="val-label">Str 3.0</span></button>
+            </div>
+            
+            <div class="info-box" style="margin-top:10px;">
+                <strong>仕様メモ:</strong><br>
+                10V=停止, 3V=最強<br>
+                設定値(強度) 0.0=最弱 → 3.0=最強
+            </div>
+        </div>
+    </div>
+
+    <!-- 詳細設定 -->
+    <div class="card" id="setting-panel" style="display:none;">
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('tab1')">強度設定(自動)</div>
+            <div class="tab" onclick="switchTab('tab2')">手動プリセット</div>
+        </div>
+
+        <div id="tab1" class="tab-content active">
+            <p style="font-size:0.8rem; color:#666; margin-bottom:5px;">※数値が大きいほど強い (Max 3.0)</p>
+            <div class="setting-grid">
+                <div class="setting-item">
+                    <span class="setting-label">待機/停止 (Weak):</span>
+                    <input type="number" id="cfg-w" step="0.05" max="3.0" min="0" inputmode="decimal">
+                </div>
+                <div class="setting-item">
+                    <span class="setting-label">通常打ち (Normal):</span>
+                    <input type="number" id="cfg-n" step="0.05" max="3.0" min="0" inputmode="decimal">
+                </div>
+            </div>
+            <p><small>※右打ち時は固定 Max 3.0 (設定不要)</small></p>
+        </div>
+
+        <div id="tab2" class="tab-content">
+            <p style="font-size:0.8rem; color:#666; margin-bottom:5px;">※手動ボタンの強度割り当て</p>
+            <div class="setting-grid">
+                <div class="setting-item"><span class="setting-label">Lv.1 (Str):</span><input type="number" id="cfg-m1" step="0.05" max="3.0"></div>
+                <div class="setting-item"><span class="setting-label">Lv.2 (Str):</span><input type="number" id="cfg-m2" step="0.05" max="3.0"></div>
+                <div class="setting-item"><span class="setting-label">Lv.3 (Str):</span><input type="number" id="cfg-m3" step="0.05" max="3.0"></div>
+                <div class="setting-item"><span class="setting-label">Lv.4 (Str):</span><input type="number" id="cfg-m4" step="0.05" max="3.0"></div>
+            </div>
+            <p><small>※Lv.5は Max 3.0 固定です</small></p>
+        </div>
+
+        <button class="btn-save" onclick="saveSettings()">設定を保存</button>
+    </div>
+
+    <script>
+        const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+        const CHAR_RX_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8"; 
+        const CHAR_TX_UUID = "1c95d5e3-d8bc-4e31-9988-457313437c35"; 
+
+        let bluetoothDevice;
+        let rxCharacteristic;
+        let configData = {}; 
+        
+        window.onload = function() {
+            if (!navigator.bluetooth) {
+                const msg = document.getElementById("error-msg");
+                msg.style.display = "block";
+                msg.innerHTML = "⚠️ ブラウザがBluetoothに対応していないか、セキュリティ制限により無効化されています。<br>URLが <b>https://</b> または <b>localhost</b> であることを確認してください。";
+                document.getElementById("btn-connect").disabled = true;
+            }
+        };
+
+        async function connectBLE() {
+            try {
+                document.getElementById("error-msg").style.display = "none";
+                console.log('Requesting Bluetooth Device...');
+                
+                let options = {};
+                if (document.getElementById("chk-debug").checked) {
+                     options = {
+                         acceptAllDevices: true,
+                         optionalServices: [SERVICE_UUID]
+                     };
+                } else {
+                    options = {
+                        filters: [{ namePrefix: 'AutoCtrl' }],
+                        optionalServices: [SERVICE_UUID]
+                    };
+                }
+
+                bluetoothDevice = await navigator.bluetooth.requestDevice(options);
+                bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
+
+                console.log('Connecting to GATT Server...');
+                const server = await bluetoothDevice.gatt.connect();
+
+                console.log('Getting Service...');
+                const service = await server.getPrimaryService(SERVICE_UUID);
+
+                console.log('Getting Characteristics...');
+                rxCharacteristic = await service.getCharacteristic(CHAR_RX_UUID);
+                const txCharacteristic = await service.getCharacteristic(CHAR_TX_UUID);
+
+                await txCharacteristic.startNotifications();
+                txCharacteristic.addEventListener('characteristicvaluechanged', handleNotifications);
+
+                console.log('Connected!');
+                document.getElementById("btn-connect").innerText = "接続済み";
+                document.getElementById("btn-connect").disabled = true;
+                document.getElementById("control-panel").style.display = "block";
+                document.getElementById("setting-panel").style.display = "block";
+                
+                sendCommand("GET_STATUS");
+
+            } catch (error) {
+                console.log('Argh! ' + error);
+                const msg = document.getElementById("error-msg");
+                msg.style.display = "block";
+                msg.innerText = "接続エラー: " + error;
+            }
+        }
+
+        function onDisconnected(event) {
+            console.log('Disconnected');
+            document.getElementById("btn-connect").innerText = "再接続";
+            document.getElementById("btn-connect").disabled = false;
+            document.getElementById("status-text").innerText = "未接続";
+            document.getElementById("status-text").className = "disconnect";
+            document.getElementById("volt").innerText = "--";
+            document.getElementById("volt").className = "volt-value";
+        }
+
+        function handleNotifications(event) {
+            const value = event.target.value;
+            const decoder = new TextDecoder('utf-8');
+            const jsonStr = decoder.decode(value);
+            
+            try {
+                const data = JSON.parse(jsonStr);
+                updateUI(data);
+            } catch (e) {
+                console.error("JSON Parse Error", e);
+            }
+        }
+
+        function updateUI(d) {
+            // 電圧表示 (d.volt はターゲット電圧 10.0 - 3.0)
+            const voltEl = document.getElementById('volt');
+            voltEl.innerText = d.volt.toFixed(1);
+            
+            // 電圧に応じた色分け
+            // 9V以上(停止に近い) -> High(Gray/Blue)
+            // 4V以下(強い) -> Low(Red)
+            if (d.volt >= 9.0) {
+                voltEl.className = 'volt-value volt-high';
+            } else if (d.volt <= 4.0) {
+                voltEl.className = 'volt-value volt-low';
+            } else {
+                voltEl.className = 'volt-value volt-mid';
+            }
+
+            // 強度表示 (d.v は 0.0 - 3.0)
+            document.getElementById('str-val').innerText = d.v.toFixed(2);
+            
+            let stText = ''; let stClass = '';
+            
+            // d.s の状態コード (Arduino側定義)
+            // 0: STOP_TIMEOUT, 1: MANUAL_FIXED, 2: NORMAL, 3: RIGHT, 4: STOP_SIGNAL
+            
+            if (d.a === 0) { 
+               // 手動モード
+               if(d.ms === 1) { stText = '[手動:停止]'; stClass = 'stop'; }
+               else if(d.s === 3) { stText = '★ 手動:右打ち (最強) ★'; stClass = 'right'; }
+               else { stText = '[手動操作中]'; stClass = 'manual'; }
+            }
+            else if (d.t === 1) { stText = '[信号待ち...停止]'; stClass = 'stop'; }
+            else if (d.h === 1) { stText = '[保留満タン停止]'; stClass = 'stop'; } 
+            else if (d.s === 3) { 
+                stText = '★ 右打ち中 (最強) ★'; 
+                stClass = 'right'; 
+            }
+            else { stText = '通常稼働中'; stClass = 'normal'; }
+            
+            let el = document.getElementById('status-text');
+            el.innerText = stText; el.className = stClass;
+
+            const autoBtnDiv = document.getElementById("auto-indicator");
+            if (d.a === 1) {
+                autoBtnDiv.innerHTML = "<div style='color:green; font-size:0.9rem; padding:10px;'>● 自動制御で動作中</div>";
+            } else {
+                if (!autoBtnDiv.innerHTML.includes("button")) {
+                    autoBtnDiv.innerHTML = '<button class="btn-auto" onclick="setAutoMode()">自動制御を再開 (START)</button>';
+                }
+            }
+
+            if (d.cfg) {
+                configData = d.cfg;
+                // 入力中でなければ設定値を反映
+                if(document.activeElement.tagName !== "INPUT") { 
+                    document.getElementById("cfg-w").value = d.cfg.W;
+                    document.getElementById("cfg-n").value = d.cfg.N;
+                    document.getElementById("cfg-m1").value = d.cfg.M1;
+                    document.getElementById("cfg-m2").value = d.cfg.M2;
+                    document.getElementById("cfg-m3").value = d.cfg.M3;
+                    document.getElementById("cfg-m4").value = d.cfg.M4;
+                }
+                // ボタン上の強度表示更新
+                document.getElementById("disp-m1").innerText = "Str " + d.cfg.M1.toFixed(2);
+                document.getElementById("disp-m2").innerText = "Str " + d.cfg.M2.toFixed(2);
+                document.getElementById("disp-m3").innerText = "Str " + d.cfg.M3.toFixed(2);
+                document.getElementById("disp-m4").innerText = "Str " + d.cfg.M4.toFixed(2);
+            }
+        }
+
+        async function sendCommand(cmd) {
+            if (!bluetoothDevice || !bluetoothDevice.gatt.connected) return;
+            const encoder = new TextEncoder('utf-8');
+            await rxCharacteristic.writeValue(encoder.encode(cmd));
+        }
+
+        function setAutoMode() {
+            sendCommand("CMD_AUTO");
+        }
+
+        function setManual(val) {
+            sendCommand("CMD_MANUAL:" + val);
+        }
+        
+        function setManualVal(key) {
+            if (configData && configData[key] !== undefined) {
+                setManual(configData[key]);
+            }
+        }
+
+        function saveSettings() {
+            let cmd = "SAVE:";
+            cmd += "W=" + document.getElementById("cfg-w").value + ",";
+            cmd += "N=" + document.getElementById("cfg-n").value + ",";
+            cmd += "M1=" + document.getElementById("cfg-m1").value + ",";
+            cmd += "M2=" + document.getElementById("cfg-m2").value + ",";
+            cmd += "M3=" + document.getElementById("cfg-m3").value + ",";
+            cmd += "M4=" + document.getElementById("cfg-m4").value;
+            sendCommand(cmd);
+        }
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            
+            event.target.classList.add('active');
+            document.getElementById(tabId).classList.add('active');
+        }
+    </script>
+</body>
+</html>
