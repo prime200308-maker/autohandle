@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Controller Web App v4.3</title>
+    <title>Controller Web App v4.5</title>
     <style>
         body { font-family: sans-serif; text-align: center; padding: 10px; background-color: #f0f0f0; touch-action: manipulation; }
         .card { background: white; padding: 15px; margin: 10px auto; max-width: 400px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
@@ -13,9 +13,9 @@
         /* ステータス色定義 */
         .stop { color: #666; } 
         .normal { color: green; } 
-        /* Ver4.3: 右打ち(最強)は3V付近なので、状態ID=3または電圧低で判定 */
         .right { color: #ff0000; font-weight: 900; animation: blink 1s infinite; } 
         .manual { color: blue; }
+        .limit { color: #d9534f; font-weight: bold; background: #ffe6e6; padding: 2px 5px; border-radius: 4px; }
         .disconnect { color: #999; }
         
         @keyframes blink { 50% { opacity: 0.7; } }
@@ -56,11 +56,11 @@
         #error-msg { color: red; font-size: 0.9rem; margin: 10px 0; display: none; background: #ffe6e6; padding: 10px; border-radius: 5px;}
         .debug-area { margin: 10px 0; font-size: 0.9rem; color: #666; }
 
-        /* Ver4.3: 電圧表示スタイル (3Vに近いほど強いので色を変える) */
+        /* Ver4.5: 電圧表示スタイル (7.5Vに近いほど強いので色を変える) */
         .volt-value { font-size: 1.5rem; font-weight: bold; }
-        .volt-high { color: #666; } /* 停止(10V)付近 */
-        .volt-mid { color: green; } /* 通常(5-6V)付近 */
-        .volt-low { color: #ff0000; text-shadow: 0 0 5px rgba(255,0,0,0.3); } /* 右打ち(3V)付近 */
+        .volt-stop { color: #666; } /* 停止(0V)付近 */
+        .volt-mid { color: green; } /* 通常(3-5V)付近 */
+        .volt-max { color: #ff0000; text-shadow: 0 0 5px rgba(255,0,0,0.3); } /* 右打ち(6V+)付近 */
 
         .info-box { background: #eef; padding: 8px; font-size: 0.85rem; border-radius: 5px; margin-bottom: 10px; text-align: left; }
     </style>
@@ -68,12 +68,12 @@
 <body>
 
     <div class="card">
-        <h1>Controller v4.3 (0-10V)</h1>
+        <h1>Controller v4.5 (0-7.5V)</h1>
         <div id="error-msg"></div>
         <button id="btn-connect" onclick="connectBLE()">Bluetooth接続</button>
         
         <div class="debug-area">
-            <label><input type="checkbox" id="chk-debug"> すべてのデバイスを表示(検索できない場合)</label>
+            <label><input type="checkbox" id="chk-debug"> すべてのデバイスを表示</label>
         </div>
         
         <div class="status">
@@ -82,6 +82,8 @@
                 出力: <span id="volt" class="volt-value">--</span> V
                 <br><span style="font-size:0.8rem; color:#666;">(強度: <span id="str-val">--</span> / 3.0)</span>
             </div>
+            <!-- リミット状態デバッグ表示 -->
+            <div id="limit-info" style="font-size:0.8rem; color:#d9534f; display:none;"></div>
         </div>
 
         <!-- 操作パネル -->
@@ -95,7 +97,7 @@
             
             <div class="manual-grid">
                 <!-- 停止は強度-1を送る -->
-                <button class="btn-step stop-btn" onclick="setManual(-1)">Lv.0<br>停止<span class="val-label">10.0V</span></button>
+                <button class="btn-step stop-btn" onclick="setManual(-1)">Lv.0<br>停止<span class="val-label">0.0V</span></button>
                 
                 <button class="btn-step" onclick="setManualVal('M1')">Lv.1<br>弱<span id="disp-m1" class="val-label">--</span></button>
                 <button class="btn-step" onclick="setManualVal('M2')">Lv.2<br>中弱<span id="disp-m2" class="val-label">--</span></button>
@@ -107,8 +109,8 @@
             </div>
             
             <div class="info-box" style="margin-top:10px;">
-                <strong>仕様メモ:</strong><br>
-                10V=停止, 3V=最強<br>
+                <strong>仕様メモ (Ver 4.5):</strong><br>
+                0V=停止, 7.5V=最強 (正比例)<br>
                 設定値(強度) 0.0=最弱 → 3.0=最強
             </div>
         </div>
@@ -242,17 +244,17 @@
         }
 
         function updateUI(d) {
-            // 電圧表示 (d.volt はターゲット電圧 10.0 - 3.0)
+            // 電圧表示 (d.volt はターゲット電圧 0.0 - 7.5)
             const voltEl = document.getElementById('volt');
             voltEl.innerText = d.volt.toFixed(1);
             
-            // 電圧に応じた色分け
-            // 9V以上(停止に近い) -> High(Gray/Blue)
-            // 4V以下(強い) -> Low(Red)
-            if (d.volt >= 9.0) {
-                voltEl.className = 'volt-value volt-high';
-            } else if (d.volt <= 4.0) {
-                voltEl.className = 'volt-value volt-low';
+            // 電圧に応じた色分け (正比例ロジック Ver4.5)
+            // 0.5V以下(停止に近い) -> Stop(Gray)
+            // 6.0V以上(強い) -> Max(Red)
+            if (d.volt <= 0.5) {
+                voltEl.className = 'volt-value volt-stop';
+            } else if (d.volt >= 6.0) {
+                voltEl.className = 'volt-value volt-max';
             } else {
                 voltEl.className = 'volt-value volt-mid';
             }
@@ -262,8 +264,9 @@
             
             let stText = ''; let stClass = '';
             
-            // d.s の状態コード (Arduino側定義)
-            // 0: STOP_TIMEOUT, 1: MANUAL_FIXED, 2: NORMAL, 3: RIGHT, 4: STOP_SIGNAL
+            // d.s の状態コード (Arduino側定義 Ver4.5)
+            // 0:STOP_TIMEOUT, 1:MANUAL_FIXED, 2:NORMAL, 3:RIGHT, 4:STOP_SIGNAL
+            // 5:LIMIT_STOP, 6:LIMIT_RECOV
             
             if (d.a === 0) { 
                // 手動モード
@@ -271,6 +274,8 @@
                else if(d.s === 3) { stText = '★ 手動:右打ち (最強) ★'; stClass = 'right'; }
                else { stText = '[手動操作中]'; stClass = 'manual'; }
             }
+            else if (d.s === 5) { stText = '⛔ リミット停止中'; stClass = 'limit'; }
+            else if (d.s === 6) { stText = '⚠ 復帰リカバリー中'; stClass = 'stop'; }
             else if (d.t === 1) { stText = '[信号待ち...停止]'; stClass = 'stop'; }
             else if (d.h === 1) { stText = '[保留満タン停止]'; stClass = 'stop'; } 
             else if (d.s === 3) { 
@@ -281,6 +286,19 @@
             
             let el = document.getElementById('status-text');
             el.innerText = stText; el.className = stClass;
+
+            // リミット情報の詳細表示（監視中など）
+            const limitInfo = document.getElementById('limit-info');
+            if (d.ls !== undefined && d.ls > 0) {
+                limitInfo.style.display = 'block';
+                let lsText = "";
+                if (d.ls === 1) lsText = "リミット監視中 (回転数制限)";
+                if (d.ls === 2) lsText = "リミット発動中 (強制停止)";
+                if (d.ls === 3) lsText = "リカバリー処理中";
+                limitInfo.innerText = lsText;
+            } else {
+                limitInfo.style.display = 'none';
+            }
 
             const autoBtnDiv = document.getElementById("auto-indicator");
             if (d.a === 1) {
@@ -351,4 +369,3 @@
     </script>
 </body>
 </html>
-
