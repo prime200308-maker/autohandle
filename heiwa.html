@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HEIWA Controller Web App v2.3</title>
+    <style>
+        :root {
+            --bg-color: #f4f5f7;
+            --card-bg: #ffffff;
+            --text-main: #2d3748;
+            --text-muted: #718096;
+            --primary: #4a5568;
+            --primary-hover: #2d3748;
+            --success: #38a169;
+            --warning: #dd6b20;
+            --danger: #e53e3e;
+            --accent: #3182ce;
+            --border-color: #e2e8f0;
+        }
+
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
+            background-color: var(--bg-color); 
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            touch-action: manipulation; 
+        }
+
+        .card { 
+            background: var(--card-bg); 
+            padding: 24px; 
+            margin-bottom: 16px;
+            width: 100%;
+            max-width: 420px; 
+            border-radius: 12px; 
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03);
+            box-sizing: border-box;
+        }
+
+        h1 { font-size: 1.25rem; font-weight: 700; color: var(--text-main); margin: 0 0 16px 0; letter-spacing: 0.05em; }
+        
+        /* ステータス表示エリア */
+        .status-container {
+            background: #f8fafc;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 20px;
+            border: 1px solid var(--border-color);
+        }
+        .status { font-weight: 700; font-size: 1.15rem; min-height: 1.5em; display: flex; align-items: center; justify-content: center;}
+        
+        .stop { color: var(--danger); } 
+        .normal { color: var(--success); } 
+        .right { color: var(--warning); animation: blink 1.2s infinite; font-weight: 900; } 
+        .manual { color: var(--accent); }
+        .disconnect { color: var(--text-muted); }
+        
+        @keyframes blink { 50% { opacity: 0.6; } }
+
+        .volt-display { font-size: 1.8rem; font-weight: 700; margin-top: 8px; font-variant-numeric: tabular-nums; }
+        .volt-unit { font-size: 1rem; font-weight: 400; color: var(--text-muted); margin-left: 4px; }
+        .boost-voltage { color: var(--warning); }
+
+        /* ボタンデザイン */
+        button { 
+            cursor: pointer; 
+            border: none; 
+            border-radius: 6px; 
+            font-family: inherit; 
+            font-weight: 500;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+        button:active { transform: scale(0.98); }
+        
+        #btn-connect { 
+            background-color: var(--primary); 
+            color: white; 
+            padding: 12px 32px; 
+            font-size: 1rem; 
+            width: 100%;
+            margin-bottom: 12px;
+            font-weight: 600;
+        }
+        #btn-connect:disabled { background-color: #cbd5e0; cursor: not-allowed; transform: none; }
+
+        .btn-auto { background-color: var(--success); color: white; width: 100%; padding: 14px; font-size: 1.1rem; margin-top: 10px; font-weight: 600; }
+        .btn-right-mode { background-color: var(--warning); color: white; width: 100%; padding: 14px; font-size: 1.1rem; margin-top: 12px; font-weight: 700; }
+
+        /* グリッドレイアウト */
+        .manual-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 16px; }
+        .btn-step { padding: 10px 4px; font-size: 0.95rem; background-color: #edf2f7; color: var(--text-main); height: 74px; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+        .btn-step:hover { background-color: #e2e8f0; }
+        .btn-step.stop-btn { color: var(--danger); font-weight: 600; background-color: #fff5f5; }
+        .btn-step.stop-btn:hover { background-color: #fed7d7; }
+        .btn-step span { font-size: 0.75rem; color: var(--text-muted); display: block; margin-top: 4px; font-weight: 400; }
+
+        .hint-text { font-size: 0.8rem; color: var(--text-muted); margin-top: 12px; line-height: 1.4; }
+
+        /* 設定タブ・入力まわり */
+        .setting-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; text-align: left; }
+        .setting-item { margin-bottom: 4px; }
+        .setting-label { font-size: 0.85rem; font-weight: 600; color: var(--text-main); display: block; margin-bottom: 4px; }
+        input[type='number'] { width: 100%; box-sizing: border-box; padding: 10px; font-size: 1rem; text-align: center; border: 1px solid var(--border-color); border-radius: 6px; background-color: #f7fafc; }
+        input[type='number']:focus { border-color: var(--accent); outline: none; background-color: #fff; }
+        .btn-save { background-color: var(--accent); color: white; padding: 12px 20px; font-size: 1rem; width: 100%; margin-top: 16px; font-weight: 600; }
+        
+        .tabs { display: flex; border-bottom: 1px solid var(--border-color); margin-bottom: 16px; }
+        .tab { flex: 1; padding: 10px; background: #edf2f7; cursor: pointer; font-size: 0.9rem; color: var(--text-muted); }
+        .tab.active { background: white; border-bottom: 2px solid var(--accent); font-weight: 600; color: var(--text-main); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
+        #error-msg { color: var(--danger); font-size: 0.85rem; margin-bottom: 12px; display: none; background: #fff5f5; padding: 12px; border-radius: 6px; border: 1px solid #fed7d7; text-align: left; line-height: 1.4; }
+        .debug-area { margin-bottom: 14px; font-size: 0.85rem; color: var(--text-muted); }
+        .debug-area input { vertical-align: middle; margin-right: 4px; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h1>HEIWA Controller v2.3</h1>
+        <div id="error-msg"></div>
+        
+        <button id="btn-connect" onclick="connectBLE()">Bluetooth 接続</button>
+        
+        <div class="debug-area">
+            <label><input type="checkbox" id="chk-debug"> 全デバイスを検索対象にする (標準で候補に出ない場合)</label>
+        </div>
+        
+        <div class="status-container">
+            <div id="status-text" class="disconnect">未接続</div>
+            <div class="volt-display"><span id="volt">--</span><span class="volt-unit">V</span></div>
+        </div>
+
+        <div id="control-panel" style="display:none;">
+            <div id="auto-indicator">
+                <button class="btn-auto" onclick="setAutoMode()">自動制御を再開</button>
+            </div>
+
+            <button class="btn-right-mode" onclick="setManual(3.0)">★ 右打ち (最大 3.00V) ★</button>
+            
+            <div class="manual-grid">
+                <button class="btn-step stop-btn" onclick="setManual(-1)">Lv.0<br>停止<span id="disp-weak">-- V</span></button>
+                <button class="btn-step" onclick="setManualVal('M1')">Lv.1<br>弱<span id="disp-m1">-- V</span></button>
+                <button class="btn-step" onclick="setManualVal('M2')">Lv.2<br>中弱<span id="disp-m2">-- V</span></button>
+                <button class="btn-step" onclick="setManualVal('M3')">Lv.3<br>中<span id="disp-m3">-- V</span></button>
+                <button class="btn-step" onclick="setManualVal('M4')">Lv.4<br>中強<span id="disp-m4">-- V</span></button>
+                <button class="btn-step" style="color:var(--accent); font-weight:bold" onclick="setManual(3.0)">Lv.5<br>MAX<span style="color:var(--accent)">3.00 V</span></button>
+            </div>
+            <p class="hint-text">※各レベルのボタンを押すと手動モードに切り替わり、自動制御が一時停止します。</p>
+        </div>
+    </div>
+
+    <div class="card" id="setting-panel" style="display:none;">
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('tab1', event)">電圧設定</div>
+            <div class="tab" onclick="switchTab('tab2', event)">手動設定</div>
+        </div>
+
+        <div id="tab1" class="tab-content active">
+            <div class="setting-grid">
+                <div class="setting-item">
+                    <span class="setting-label">待機/タイムアウト (W):</span>
+                    <input type="number" id="cfg-w" step="0.05" min="0" max="3.3" inputmode="decimal">
+                </div>
+                <div class="setting-item">
+                    <span class="setting-label">通常打ち (N):</span>
+                    <input type="number" id="cfg-n" step="0.05" min="0" max="3.3" inputmode="decimal">
+                </div>
+            </div>
+            <p class="hint-text">※右打ち(大当たり)検知時は、自動的に最大値の3.00Vに固定されます。</p>
+        </div>
+
+        <div id="tab2" class="tab-content">
+            <div class="setting-grid">
+                <div class="setting-item"><span class="setting-label">Lv.1 (M1):</span><input type="number" id="cfg-m1" step="0.05" min="0" max="3.3"></div>
+                <div class="setting-item"><span class="setting-label">Lv.2 (M2):</span><input type="number" id="cfg-m2" step="0.05" min="0" max="3.3"></div>
+                <div class="setting-item"><span class="setting-label">Lv.3 (M3):</span><input type="number" id="cfg-m3" step="0.05" min="0" max="3.3"></div>
+                <div class="setting-item"><span class="setting-label">Lv.4 (M4):</span><input type="number" id="cfg-m4" step="0.05" min="0" max="3.3"></div>
+            </div>
+            <p class="hint-text">※Lv.5は上限値の 3.00V 固定です。</p>
+        </div>
+
+        <button class="btn-save" onclick="saveSettings()">設定を本体へ保存</button>
+    </div>
+
+    <script>
+        // ESP32コードと完全に一致する専用UUIDの定義
+        const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+        const CHAR_RX_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8"; 
+        const CHAR_TX_UUID = "1c95d5e3-d8bc-4e31-9988-457313437c35"; 
+
+        let bluetoothDevice;
+        let rxCharacteristic;
+        let configData = {}; 
+        
+        // ブラウザ互換性チェック
+        window.onload = function() {
+            if (!navigator.bluetooth) {
+                const msg = document.getElementById("error-msg");
+                msg.style.display = "block";
+                msg.innerHTML = "⚠️ Web Bluetooth 非対応のブラウザ、またはセキュリティ制限（非HTTPS環境など）により無効化されています。<br>URLが <b>https://</b> または <b>localhost</b> であることを確認してください。";
+                document.getElementById("btn-connect").disabled = true;
+            }
+        };
+
+        // BLE接続処理
+        async function connectBLE() {
+            try {
+                document.getElementById("error-msg").style.display = "none";
+                
+                let options = {};
+                if (document.getElementById("chk-debug").checked) {
+                     options = {
+                         acceptAllDevices: true,
+                         optionalServices: [SERVICE_UUID]
+                     };
+                } else {
+                    options = {
+                        // "AutoCtrl" から始まるデバイス名、かつ指定のSERVICE_UUIDを持つものに限定
+                        filters: [{ namePrefix: 'AutoCtrl' }],
+                        optionalServices: [SERVICE_UUID]
+                     };
+                }
+
+                bluetoothDevice = await navigator.bluetooth.requestDevice(options);
+                bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
+
+                const server = await bluetoothDevice.gatt.connect();
+                const service = await server.getPrimaryService(SERVICE_UUID);
+
+                rxCharacteristic = await service.getCharacteristic(CHAR_RX_UUID);
+                const txCharacteristic = await service.getCharacteristic(CHAR_TX_UUID);
+
+                // 通知の開始
+                await txCharacteristic.startNotifications();
+                txCharacteristic.addEventListener('characteristicvaluechanged', handleNotifications);
+
+                // UIの表示切り替え
+                document.getElementById("btn-connect").innerText = "接続済み";
+                document.getElementById("btn-connect").disabled = true;
+                document.getElementById("control-panel").style.display = "block";
+                document.getElementById("setting-panel").style.display = "block";
+                
+                // 現在のステータスを要求
+                sendCommand("GET_STATUS");
+
+            } catch (error) {
+                console.error(error);
+                const msg = document.getElementById("error-msg");
+                msg.style.display = "block";
+                msg.innerText = "接続エラー: " + error.message;
+            }
+        }
+
+        // 切断時処理
+        function onDisconnected(event) {
+            document.getElementById("btn-connect").innerText = "再接続";
+            document.getElementById("btn-connect").disabled = false;
+            document.getElementById("status-text").innerText = "未接続";
+            document.getElementById("status-text").className = "disconnect";
+            document.getElementById("volt").innerText = "--";
+            document.getElementById("control-panel").style.display = "none";
+            document.getElementById("setting-panel").style.display = "none";
+        }
+
+        // データ受信ハンドラ
+        function handleNotifications(event) {
+            const value = event.target.value;
+            const decoder = new TextDecoder('utf-8');
+            const jsonStr = decoder.decode(value);
+            
+            try {
+                const data = JSON.parse(jsonStr);
+                updateUI(data);
+            } catch (e) {
+                console.error("JSON Parse Error", e);
+            }
+        }
+
+        // UI表示の更新
+        function updateUI(d) {
+            const voltEl = document.getElementById('volt');
+            voltEl.innerText = d.v.toFixed(2);
+            
+            // 最大出力時は電圧数値を少し強調
+            if (d.v >= 3.0) {
+                voltEl.className = 'boost-voltage';
+            } else {
+                voltEl.className = '';
+            }
+            
+            let stText = ''; 
+            let stClass = '';
+            
+            if (d.a === 0) { 
+               // 手動モード
+               if(d.ms === 1) { stText = '【手動】 一時停止中'; stClass = 'stop'; }
+               else if(d.s === 3) { stText = '★ 手動: 右打ち出力中 ★'; stClass = 'right'; }
+               else { stText = '【手動】 出力調整中'; stClass = 'manual'; }
+            }
+            else if (d.t === 1) { stText = '信号待ち (タイムアウト停止)'; stClass = 'stop'; }
+            else if (d.h === 1) { stText = '保留満タン (信号停止)'; stClass = 'stop'; } 
+            else if (d.s === 3) { 
+                stText = '★ 右打ち中 (大当たり制御) ★'; 
+                stClass = 'right'; 
+            }
+            else { stText = '自動制御: 通常稼働中'; stClass = 'normal'; }
+            
+            let el = document.getElementById('status-text');
+            el.innerText = stText; 
+            el.className = stClass;
+
+            const autoBtnDiv = document.getElementById("auto-indicator");
+            if (d.a === 1) {
+                autoBtnDiv.innerHTML = "<div style='color:var(--success); font-size:0.9rem; padding:12px; font-weight:600;'>● システムによる自動運用中</div>";
+            } else {
+                if (!autoBtnDiv.innerHTML.includes("button")) {
+                    autoBtnDiv.innerHTML = '<button class="btn-auto" onclick="setAutoMode()">自動制御を再開 (START)</button>';
+                }
+            }
+
+            if (d.cfg) {
+                configData = d.cfg;
+                // ユーザーが入力中でない場合のみ最新の設定値をフォームへ反映
+                if(document.activeElement.tagName !== "INPUT") { 
+                    document.getElementById("cfg-w").value = d.cfg.W;
+                    document.getElementById("cfg-n").value = d.cfg.N;
+                    document.getElementById("cfg-m1").value = d.cfg.M1;
+                    document.getElementById("cfg-m2").value = d.cfg.M2;
+                    document.getElementById("cfg-m3").value = d.cfg.M3;
+                    document.getElementById("cfg-m4").value = d.cfg.M4;
+                }
+                // ボタン上のサブテキスト(電圧表示)を同期
+                document.getElementById("disp-weak").innerText = "(" + d.cfg.W.toFixed(2) + " V)";
+                document.getElementById("disp-m1").innerText = d.cfg.M1.toFixed(2) + " V";
+                document.getElementById("disp-m2").innerText = d.cfg.M2.toFixed(2) + " V";
+                document.getElementById("disp-m3").innerText = d.cfg.M3.toFixed(2) + " V";
+                document.getElementById("disp-m4").innerText = d.cfg.M4.toFixed(2) + " V";
+            }
+        }
+
+        // コマンド送信
+        async function sendCommand(cmd) {
+            if (!bluetoothDevice || !bluetoothDevice.gatt.connected) return;
+            const encoder = new TextEncoder('utf-8');
+            await rxCharacteristic.writeValue(encoder.encode(cmd));
+        }
+
+        function setAutoMode() {
+            sendCommand("CMD_AUTO");
+        }
+
+        function setManual(val) {
+            sendCommand("CMD_MANUAL:" + val);
+        }
+        
+        function setManualVal(key) {
+            if (configData && configData[key] !== undefined) {
+                setManual(configData[key]);
+            }
+        }
+
+        // 設定保存コマンドのビルドと送信
+        function saveSettings() {
+            let cmd = "SAVE:";
+            cmd += "W=" + document.getElementById("cfg-w").value + ",";
+            cmd += "N=" + document.getElementById("cfg-n").value + ",";
+            cmd += "M1=" + document.getElementById("cfg-m1").value + ",";
+            cmd += "M2=" + document.getElementById("cfg-m2").value + ",";
+            cmd += "M3=" + document.getElementById("cfg-m3").value + ",";
+            cmd += "M4=" + document.getElementById("cfg-m4").value;
+            sendCommand(cmd);
+        }
+
+        // タブ切り替えロジック
+        function switchTab(tabId, event) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            
+            event.target.classList.add('active');
+            document.getElementById(tabId).classList.add('active');
+        }
+    </script>
+</body>
+</html>
