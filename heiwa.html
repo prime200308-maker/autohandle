@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HEIWA Controller Web App v2.4</title>
+    <title>HEIWA Controller Web App v2.5</title>
     <style>
         :root {
             --bg-color: #f4f5f7;
@@ -44,7 +44,6 @@
 
         h1 { font-size: 1.25rem; font-weight: 700; color: var(--text-main); margin: 0 0 16px 0; letter-spacing: 0.05em; }
         
-        /* ステータス表示エリア */
         .status-container {
             background: #f8fafc;
             border-radius: 8px;
@@ -66,7 +65,6 @@
         .volt-unit { font-size: 1rem; font-weight: 400; color: var(--text-muted); margin-left: 4px; }
         .boost-voltage { color: var(--warning); }
 
-        /* ボタンデザイン */
         button { 
             cursor: pointer; 
             border: none; 
@@ -91,7 +89,6 @@
         .btn-auto { background-color: var(--success); color: white; width: 100%; padding: 14px; font-size: 1.1rem; margin-top: 10px; font-weight: 600; }
         .btn-right-mode { background-color: var(--warning); color: white; width: 100%; padding: 14px; font-size: 1.1rem; margin-top: 12px; font-weight: 700; }
 
-        /* グリッドレイアウト */
         .manual-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 16px; }
         .btn-step { padding: 10px 4px; font-size: 0.95rem; background-color: #edf2f7; color: var(--text-main); height: 74px; display: flex; flex-direction: column; justify-content: center; align-items: center; }
         .btn-step:hover { background-color: #e2e8f0; }
@@ -101,7 +98,6 @@
 
         .hint-text { font-size: 0.8rem; color: var(--text-muted); margin-top: 12px; line-height: 1.4; }
 
-        /* 設定タブ・入力まわり */
         .setting-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; text-align: left; }
         .setting-item { margin-bottom: 4px; }
         .setting-label { font-size: 0.85rem; font-weight: 600; color: var(--text-main); display: block; margin-bottom: 4px; }
@@ -119,7 +115,7 @@
         .debug-area { margin-bottom: 14px; font-size: 0.85rem; color: var(--text-muted); }
         .debug-area input { vertical-align: middle; margin-right: 4px; }
 
-        /* 追加：トグルスイッチ用スタイル */
+        /* トグルスイッチ用スタイル */
         .toggle-container {
             display: flex;
             align-items: center;
@@ -169,14 +165,14 @@
             transition: .3s;
             border-radius: 50%;
         }
-        input:checked + .slider { background-color: var(--success); }
+        input:checked + .slider { background-color: var(--accent); }
         input:checked + .slider:before { transform: translateX(24px); }
     </style>
 </head>
 <body>
 
     <div class="card">
-        <h1>HEIWA Controller v2.4</h1>
+        <h1>HEIWA Controller v2.5</h1>
         <div id="error-msg"></div>
         
         <button id="btn-connect" onclick="connectBLE()">Bluetooth 接続</button>
@@ -197,11 +193,10 @@
 
             <button class="btn-right-mode" onclick="setManual(3.0)">★ 右打ち (最大 3.00V) ★</button>
 
-            <!-- ★ 追加：右打ち時の自動止め打ち無視切り替えスイッチ -->
             <div class="toggle-container">
                 <div class="toggle-label">
-                    右打ち時のオートハンドルストップ
-                    <span>ON: 保留満タンを無視して打ち続ける / OFF: 止める</span>
+                    右打ち中のオートハンドルストップ
+                    <span>ON: 保留満タンで止める / OFF: 無視して打ち続ける</span>
                 </div>
                 <label class="switch">
                     <input type="checkbox" id="tog-ign-stop" onchange="toggleIgnoreStop(this)">
@@ -378,9 +373,11 @@
                 }
             }
 
-            // ★ 本体から受信した無視フラグ（ist）をスイッチのチェック状態に同期
+            // ★ 本体から受信した無視フラグ（ist）を元に、スイッチのチェック状態を正しく同期
+            // ist === 1 (無視して打つ) のときはスイッチを「OFF」にする
+            // ist === 0 (通常通り止める) のときはスイッチを「ON」にする
             if (d.ist !== undefined) {
-                document.getElementById("tog-ign-stop").checked = (d.ist === 1);
+                document.getElementById("tog-ign-stop").checked = (d.ist === 0);
             }
 
             if (d.cfg) {
@@ -421,9 +418,9 @@
             }
         }
 
-        // ★ 追加：トグルスイッチが操作されたときにコマンドを送信
+        // ★ スイッチON（止める）なら無視フラグを0、スイッチOFF（打ち続ける）なら無視フラグを1にして送信
         function toggleIgnoreStop(element) {
-            const val = element.checked ? "1" : "0";
+            const val = element.checked ? "0" : "1";
             sendCommand("CMD_IGN_STOP:" + val);
         }
 
